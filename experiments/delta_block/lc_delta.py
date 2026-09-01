@@ -282,7 +282,44 @@ def rot_fwd_chunked(X, P, C=64, init=None):
 CHUNKED = {"dddecay": dddecay_fwd_chunked, "rot": rot_fwd_chunked}
 
 
-BLOCKS = {"dddecay": (dddecay_init, dddecay_fwd, dddecay_bwd),
+# ══════════════════ CTRL: его же time-invariant EMA, но с проверенным grad ══════════════════
+def ema_init(D, rng):
+    return dict(th=np.zeros(D), sc=np.ones(D))
+
+
+def ema_fwd(X, P, init=None):
+    """h_t = σ(th) h_{t-1} + (1-σ(th)) x_t  — дословно nano_lc.ema_mix (обучаемый th)."""
+    B, T, D = X.shape
+    a = sig(P["th"])
+    H = np.empty_like(X)
+    h = np.zeros((B, D), X.dtype) if init is None else np.array(init, dtype=X.dtype)
+    for t in range(T):
+        h = a * h + (1.0 - a) * X[:, t]
+        H[:, t] = h
+    return H * P["sc"], dict(a=a, H=H, X=X, last=h)
+
+
+def ema_bwd(dY, ctx, P):
+    """a = σ(th) — time-invariant, поэтому dth накапливается по всем t и всем строкам."""
+    a, H, X = ctx["a"], ctx["H"], ctx["X"]
+    B, T, D = H.shape
+    sc = P["sc"]
+    dH = dY * sc
+    dsc = np.einsum("btd,btd->d", dY, H)
+    dX = np.zeros_like(H)
+    da = np.zeros((B, T, D), dY.dtype)              # a — (D,), da — по всем токеням
+    lam = np.zeros((B, D), dY.dtype)
+    for t in range(T - 1, -1, -1):
+        lam = dH[:, t] + a * lam                  # ∂h_{t+1}/∂h_t = a (одинаков для всех t)
+        hprev = H[:, t - 1] if t > 0 else np.zeros((B, D), H.dtype)
+        da[:, t] = lam * (hprev - X[:, t])         # ∂h_t/∂a = h_{t-1} - x_t
+        dX[:, t] = lam * (1.0 - a)                 # ∂h_t/∂x_t = 1 - a
+    dth = (da * a * (1.0 - a)).sum((0, 1))          # цепочка через σ(th)
+    return dX, dict(th=dth, sc=dsc)
+
+
+BLOCKS = {"ema": (ema_init, ema_fwd, ema_bwd),
+          "dddecay": (dddecay_init, dddecay_fwd, dddecay_bwd),
           "rot": (rot_init, rot_fwd, rot_bwd),
           "delta": (delta_init, delta_fwd, delta_bwd)}
 

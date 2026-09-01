@@ -74,7 +74,7 @@ def chunk_parity(name, P, X, cuts=(3, 4, 2)):
 
 
 ok = True
-for name in ("dddecay", "rot", "delta"):
+for name in ("ema", "dddecay", "rot", "delta"):
     P = {k: v.copy() for k, v in L.BLOCKS[name][0](D, rng).items()}
     err = fd_grad(name, P, X)
     if name == "delta" and False:          # сходимость шага: ошибка должна падать как O(ε²)
