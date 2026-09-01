@@ -39,6 +39,10 @@ PRESET = {
     "5090":      dict(bw=1792, fp16=210,  vram=32,  w=420, usd=0.45),
     "a6000":     dict(bw=768,  fp16=77,   vram=48,  w=250, usd=0.40),
     "l4":        dict(bw=300,  fp16=121,  vram=24,  w=60,  usd=0.35),
+    # T4 (sm75, Kaggle). У leancore-ветки путь fp32+NS5 (bf16/FA2 недоступны), поэтому
+    # базовая строка = 8.1 TF FP32, а не 65 TF tensor-core. t4tc — только для сравнения.
+    "t4":        dict(bw=300,  fp16=8.1,  vram=16,  w=70,  usd=0.00),
+    "t4tc":      dict(bw=300,  fp16=65,   vram=16,  w=70,  usd=0.00),
     "a100":      dict(bw=1935, fp16=312,  vram=80,  w=300, usd=1.20),
     "h100":      dict(bw=3350, fp16=989,  vram=80,  w=500, usd=2.00),
     "h200":      dict(bw=4800, fp16=989,  vram=141, w=520, usd=2.50),
@@ -192,12 +196,19 @@ def cmd_fit(a):
     print(f"# fit: {a.params} total / {a.active or a.params} active · {a.bits} · ctx {a.ctx}"
           f" · {a.preset} · full-attn-слоёв {a.attn_ratio*100:.0f}%")
     block(d, p["vram"])
+    if n(a.params) < 5e7 and "ddr" not in a.preset:
+        print("  ⚠ полосная модель нерелевантна при <50M параметров на GPU: узкое место —"
+              " launch overhead и ядра, а не BW. Число tok/s здесь = верхняя граница"
+              " физики, а не прогноз; для leancore-масштаба (3M) используйте замеры, не этот столбец.")
     share = d["ctx_gb"] / max(1e-9, d["B_gb"])
     print(f"  доля контекста в B_tok: {share*100:.0f}%"
           + ("   <-- состояние дороже весов: сначала KV-квант/линейные слои/кэш"
              if share > 0.5 else ""))
     print("\n  Чувствительность (одно изменение за раз):")
-    variants = [("контекст ×4", dict(ctx=a.ctx * 4)), ("контекст ÷8", dict(ctx=max(1024, a.ctx // 8))),
+    # пол «÷8» обязан оставаться делением: max(1024, …) на коротких контекстах разворачивал
+    # эксперимент в обратную сторону (ctx=96 -> 1024 = ×10), и таблица врела направлением.
+    c4, c8 = a.ctx * 4, max(16, a.ctx // 8)
+    variants = [(f"контекст {a.ctx}->{c4}", dict(ctx=c4)), (f"контекст {a.ctx}->{c8}", dict(ctx=c8)),
                 ("q8", dict(bits="q8")), ("iq2", dict(bits="iq2")),
                 ("fp16 (без кванта)", dict(bits="f16")),
                 ("гибрид 3:1", dict(attn_ratio=0.25)), ("гибрид 7:1", dict(attn_ratio=1 / 8)),

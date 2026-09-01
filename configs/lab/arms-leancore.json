@@ -1,0 +1,64 @@
+{
+  "study": "L · миксер LeanCore: чем заменить time-invariant EMA (ema_mix) при равном MAC",
+  "note": "Переносится в его брекет (kaggle/bracket.py: rungs 60/200/500/1500, CTRL не выбывает, авто-DQ wn<3/NaN, resume). CTRL = ema = его текущий чемпион, побитово без изменений. Решает ТОЛЬКО iso-quality по цене обучения (его же метр ×2.4–2.6 для EMA-vs-attn), не PPL на фиксированном шаге. MAC миксера обязателен к пересчёту в --profile: A = +D²+2D, B = +6D, C = +8D². Delta при T=96 = 1.33× attn MAC — arm заведомо с плохим iso-cost, оставлен как фальсификатор.",
+  "budget": {
+    "depth": 4,
+    "params_non_embedding": "3.03M",
+    "seqlen": 96,
+    "global_batch_tokens": 2304,
+    "precision": "fp32 (NS5, sm75; bf16/FA2 недоступны)",
+    "lr_schedule": "warmup_stable_decay",
+    "vocab": 8000,
+    "tokenizer": "word-v8000 (shakespeare, OOV 3.5%)",
+    "corpus": "shakespeare-1075956 tok (train 1011399 / val 64557)",
+    "corpus_hash": "REPLACE_WITH_SHA256",
+    "eval": "val-PPL + dLL-порождение + state-tracking probe (чётность)",
+    "hardware": "1x t4 (kaggle), 3 GiB/sess <=9h, DP выключен",
+    "mfu_assumed": 0.15
+  },
+  "tiers": {
+    "screen": {
+      "tokens": 460800,
+      "seeds": [1],
+      "energy_cap_kwh": 1.0,
+      "arms": "all",
+      "note": "= 200 шагов × B24 × T96 (его rung между 60 и 500)"
+    },
+    "confirm": {
+      "tokens": 3456000,
+      "seeds": [1, 2, 3],
+      "energy_cap_kwh": 8.0,
+      "arms": "survivors_only",
+      "n_survivors": 2,
+      "note": "= 1500 шагов × B24 × T96, финальный rung его брекета"
+    }
+  },
+  "mechanisms": {
+    "mixer": {"keys": ["mixer.type", "mixer.state_dim"]}
+  },
+  "arms": {
+    "lc00_ctrl_ema": {
+      "hypothesis": "корень = текущий nano_lc.ema_mix (a = sigmoid(th), time-invariant): 258048 MAC/токен, 258624 пар/блок, val PPL 162.16 @1000 шагов (k=0.55)",
+      "mechanism": null,
+      "config": {"mixer.type": "ema", "mixer.state_dim": "D"}
+    },
+    "lc01_dddecay": {
+      "hypothesis": "data-dependent decay стоит +37056 MAC/блок (0.169× attn при T=96) и обязан не ухудшить val-PPL; если ухудшил — data-dependence не на что опереться на 3M, закрываем как negative result",
+      "mechanism": "mixer",
+      "parent": "lc00_ctrl_ema",
+      "config": {"mixer.type": "dddecay"}
+    },
+    "lc02_rot": {
+      "hypothesis": "комплексная диагональ (фаза) = +1152 MAC/токен (+0.4% блока) и >=2× выигрыш на чётностном probe при равном val-PPL; на val-PPL при T=96 ожидаем шум",
+      "mechanism": "mixer",
+      "parent": "lc00_ctrl_ema",
+      "config": {"mixer.type": "rot", "mixer.state_dim": "2D"}
+    },
+    "lc03_delta": {
+      "hypothesis": "gated delta rule (матричное состояние) при T=96 проигрывает по iso-cost (1.33× attn MAC). Если всё равно выигрывает у EMA изо-качество — память важнее FLOPs и план «дешёвый миксер» надо пересобирать вокруг D²-классов",
+      "mechanism": "mixer",
+      "parent": "lc00_ctrl_ema",
+      "config": {"mixer.type": "delta", "mixer.state_dim": "D^2"}
+    }
+  }
+}
