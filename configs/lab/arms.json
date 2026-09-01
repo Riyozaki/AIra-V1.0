@@ -1,0 +1,111 @@
+{
+  "study": "E1 · архитектурная микро-лаборатория на одном 24GB-GPU (2026-09)",
+  "note": "Два тира. screen: дёшево, 1 сид, отсев. confirm: только выжившие, 3 сида, больший бюджет. Арм обязан содержать ровно один mechanism.",
+  "budget": {
+    "depth": 14,
+    "params_non_embedding": "250M",
+    "seqlen": 4096,
+    "global_batch_tokens": 524288,
+    "precision": "bf16",
+    "lr_schedule": "warmup_stable_decay",
+    "warmup_fraction": 0.04,
+    "final_lr_fraction": 0.05,
+    "vocab": 32768,
+    "tokenizer": "nanochat-bpe",
+    "corpus": "finewedu-shard-a",
+    "corpus_hash": "REPLACE_WITH_SHA256",
+    "eval": "val-ppl + dclm-core-lite + retrieval-128k",
+    "hardware": "1x rtx-4090 (24GB), -pl 300",
+    "mfu_assumed": 0.25
+  },
+  "tiers": {
+    "screen": {
+      "tokens": 600000000,
+      "seeds": [1],
+      "energy_cap_kwh": 30.0,
+      "arms": "all"
+    },
+    "confirm": {
+      "tokens": 2000000000,
+      "seeds": [1, 2, 3],
+      "energy_cap_kwh": 140.0,
+      "arms": "survivors_only",
+      "params_non_embedding": "420M",
+      "n_survivors": 3,
+      "rule": "в confirm идут только армы, прошедшие screen с |Δppl| > 2σ_повтора ИЛИ выигрышем >=1.15x по Дж/шаг"
+    }
+  },
+  "mechanisms": {
+    "muon": {"keys": ["optimizer"]},
+    "hybrid_attention": {"keys": ["attention.layers_ratio_full", "attention.recurrent"]},
+    "recursion": {"keys": ["recursion.blocks", "recursion.routing"]},
+    "ternary_ffn": {"keys": ["ternary_ffn_layers_ratio", "quant"]},
+    "activation": {"keys": ["ffn", "activation"]},
+    "value_embeddings": {"keys": ["value_embeddings"]}
+  },
+  "arms": {
+    "arm00_baseline": {
+      "hypothesis": "корень: все speedrun-трюки включены (наш референс, не 'наша идея')",
+      "mechanism": null,
+      "config": {"attention.layers_ratio_full": 1.0, "attention.recurrent": "none",
+                 "optimizer": "muon+adamw", "ffn": "gelu_tanh", "activation": "gelu_tanh",
+                 "recursion.blocks": 1, "recursion.routing": "none",
+                 "value_embeddings": true, "ternary_ffn_layers_ratio": 0.0, "quant": "none"}
+    },
+    "arm01_muon_off": {
+      "hypothesis": "Muon действительно даёт вклад (контроль: если без него так же - стенд врёт)",
+      "mechanism": "muon",
+      "parent": "arm00_baseline",
+      "config": {"optimizer": "adamw_only"}
+    },
+    "arm02_hybrid_3to1": {
+      "hypothesis": "3:1 линейное:полное держит ppl при -60% состояния",
+      "mechanism": "hybrid_attention",
+      "parent": "arm00_baseline",
+      "config": {"attention.layers_ratio_full": 0.25, "attention.recurrent": "gated_delta"}
+    },
+    "arm03_hybrid_7to1": {
+      "hypothesis": "та же ось, дальше по кривой (свип одного механизма - это не два изменения)",
+      "mechanism": "hybrid_attention",
+      "parent": "arm00_baseline",
+      "config": {"attention.layers_ratio_full": 0.125, "attention.recurrent": "gated_delta"}
+    },
+    "arm04_hybrid_no_recurrent": {
+      "hypothesis": "просто 1/4 full-attention БЕЗ линейного слоя: проверка, что выигрыш не от 'меньше внимания'",
+      "mechanism": "hybrid_attention",
+      "parent": "arm00_baseline",
+      "config": {"attention.layers_ratio_full": 0.25, "attention.recurrent": "none"}
+    },
+    "arm05_mor_r2": {
+      "hypothesis": "общий блок x2 (MoR): -25% FLOPs при равном ppl",
+      "mechanism": "recursion",
+      "parent": "arm00_baseline",
+      "config": {"recursion.blocks": 2, "recursion.routing": "expert_choice"}
+    },
+    "arm06_hybrid_x_mor": {
+      "hypothesis": "взаимодействие: гибрид 3:1 + рекурсия x2 > min(двух) - иначе не публиковать",
+      "mechanism": "recursion",
+      "parent": "arm05_mor_r2",
+      "interaction_with": ["arm02_hybrid_3to1", "arm05_mor_r2"],
+      "config": {"attention.layers_ratio_full": 0.25, "attention.recurrent": "gated_delta"}
+    },
+    "arm07_ternary_ffn_half": {
+      "hypothesis": "BitLinear+absmean в половине FFN: -память/-энергия, ppl в шуме",
+      "mechanism": "ternary_ffn",
+      "parent": "arm00_baseline",
+      "config": {"ternary_ffn_layers_ratio": 0.5, "quant": "absmean"}
+    },
+    "arm08_exp3": {
+      "hypothesis": "EXP3 против gelu_tanh при равном байт-бюджете",
+      "mechanism": "activation",
+      "parent": "arm00_baseline",
+      "config": {"ffn": "exp3", "activation": "exp3"}
+    },
+    "arm09_no_value_emb": {
+      "hypothesis": "value embeddings: переносится ли польза на 24GB-режим",
+      "mechanism": "value_embeddings",
+      "parent": "arm00_baseline",
+      "config": {"value_embeddings": false}
+    }
+  }
+}
