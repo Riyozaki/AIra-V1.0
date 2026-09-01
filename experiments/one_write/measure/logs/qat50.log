@@ -1,0 +1,7 @@
+QAT targets: 12 matrices
+[MuonW] muon: ['b0.Wm', 'b0.fc1', 'b0.fc2', 'b1.Wm']... (12 шт), adam: 28 шт
+QAT-KL: цель = fp32-учитель (T=2)
+{"step": -1, "val_loss": 5.3459, "note": "zero-shot-quantized"}
+{"step": 0, "train_loss": 5.3476, "val_loss": 5.301, "val_ppl": 200.54, "wall": 3.2}
+{"step": 49, "train_loss": 4.8792, "val_loss": 4.8458, "val_ppl": 127.21, "wall": 71.0}
+SUMMARY {"tag": "L_mussa1500s1_qat50", "params": 2591616, "final_val_ppl": 126.05, "wall_s": 73.8}
