@@ -16,7 +16,14 @@
 5. [`docs/04-BENCH.md`](docs/04-BENCH.md) — протокол измерений (Дж/токен, плейбек, анти-чит).
 6. [`docs/05-RESULTS.md`](docs/05-RESULTS.md) — живой журнал результатов (и неудач тоже).
 7. [`docs/SOURCES.md`](docs/SOURCES.md) — ссылки, даты и флаг доверия; помечено, что вне моего среза знаний.
-8. [`experiments/README.md`](experiments/README.md) — чем именно запускается (стенд = nanochat, не свой трейнер).
+8. [`docs/06-DELTA-BLOCKS.md`](docs/06-DELTA-BLOCKS.md) — чем заменять time-invariant EMA:
+   выведенные руки (rot/dddecay/gated-delta), паритет чанк==рекурсия, цена в MAC/токен.
+9. [`docs/07-ONE-WRITE.md`](docs/07-ONE-WRITE.md) — ставка «один проход вместо эпох»: RLS как
+   точный минимум того шага, что delta-правило берёт спуском; `lc_rls` + surprise-gate.
+10. [`docs/08-ONE-WRITE-MEASURED.md`](docs/08-ONE-WRITE-MEASURED.md) — **замер ставки на его же
+   модели и корпусе**: где ×100 подтвердился (правка связей в ×6–×150 дешевле эпох, +1.5% PPL
+   бесплатно за retrieval-канал), а где умерла (аналитическая запись в состояние: ловить 21%).
+11. [`experiments/README.md`](experiments/README.md) — чем именно запускается (стенд = nanochat, не свой трейнер).
 
 ## Инструменты
 
